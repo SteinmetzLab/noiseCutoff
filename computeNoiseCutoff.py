@@ -6,6 +6,25 @@ Created on Wed Oct 19 15:53:41 2022
 """
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+import mpl_scatter_density
+from matplotlib.colors import LinearSegmentedColormap
+from slidingRP import metrics
+from brainbox.metrics.single_units import noise_cutoff
+
+# Set up colormap and scatter density for noise_cutoff plots
+white_viridis = LinearSegmentedColormap.from_list('white_viridis', [
+    (0, '#ffffff'),
+    (1e-20, '#440053'),
+    (0.2, '#404388'),
+    (0.4, '#2a788e'),
+    (0.6, '#21a784'),
+    (0.8, '#78d151'),
+    (1, '#fde624'),
+], N=256)
+
+
 def noise_cutoff(amps, quantile_length=.25, n_bins=100, nc_threshold=5, percent_threshold=0.10):
     """
     A new metric to determine whether a unit's amplitude distribution is cut off
@@ -75,3 +94,59 @@ def noise_cutoff(amps, quantile_length=.25, n_bins=100, nc_threshold=5, percent_
 
     nc_pass = ~fail_criteria
     return nc_pass, cutoff, first_low_quantile
+
+
+
+def using_mpl_scatter_density(fig, ax1, ax2, x, y):
+    density = ax1.scatter_density(x, y, cmap=white_viridis)
+    fig.colorbar(density, ax=ax2, label='Number of points per pixel')
+
+
+def plotNoiseCutoff(amps, spikeTimes, n_bins=100, percent_threshold=0.10):
+    '''
+    Make a plot of the distribution of amplitudes a)across time and b)binned in a histogram
+    and labelled with the outcomes of noise_cutoff metric
+
+    Parameters
+    ----------
+    amps : ndarray_like
+        The amplitudes (in uV) of the spikes. (spikes.amps)
+
+    spikeTimes : ndarray_like
+        The spike times. (spikes.times)
+
+    '''
+
+    nc_pass, nc_value, first_bin_height = noise_cutoff(amps)
+
+    fig = plt.figure(figsize=(10, 5))
+    ax0 = fig.add_subplot(121, projection='scatter_density')
+    ax1 = fig.add_subplot(122)
+
+    # Add scatter plot
+    using_mpl_scatter_density(fig, ax0, ax1, spikeTimes, amps)
+    ax0.set_ylim([0, max(amps)])
+    ax0.set_xlabel('Time (s)')
+    ax0.set_ylabel('Template amplitude (KS)')
+    ax0.set_yticklabels([])
+
+    # Add histogram plot
+    ax1.plot()
+    bins_list = np.linspace(0, np.max(amps), n_bins)  # list of bins to compute the amplitude histogram for plotting
+    n, bins, patches = ax1.hist(amps, bins_list, color='#440053', orientation='horizontal')
+    peak_bin_height = np.max(n)
+    percent_label = np.round(first_bin_height / peak_bin_height, 2) * 100
+    ax1.axvline(x=percent_threshold * peak_bin_height)
+    ax1.axes.yaxis.set_ticklabels([])
+    ax1.set_ylim([0, max(amps)])
+    ax1.set_xlabel('Count')
+
+    # Add titles with metric value and percent of peak; red = fail and green = pass
+    if ~nc_pass:
+        ax0.set_title('Cutoff metric value: ' + str(round(nc_value, 2)), color='red')
+        ax1.set_title('Low bin: ' + str(round(percent_label, 2)) + '{}% of peak ', color='red')
+    else:
+        ax0.set_title('Cutoff metric value: ' + str(round(nc_value, 2)), color='green')
+        ax1.set_title('Low bin: ' + str(round(percent_label, 2)) + '{}% of peak ', color='green')
+
+    fig.show()
