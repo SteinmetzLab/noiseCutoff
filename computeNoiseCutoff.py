@@ -96,6 +96,95 @@ def noise_cutoff(amps, quantile_length=.25, n_bins=100, nc_threshold=5, percent_
     return nc_pass, cutoff, first_low_quantile
 
 
+def noiseCutoff_all(spikeAmps, spikeClusters):
+    '''
+
+    Compute the metric for each cluster in a recording
+
+    Parameters
+    ----------
+    spikeAmps : numpy.ndarray
+        array of spike amplitudes corresponding to each spike
+    spikeClusters : numpy.ndarray
+        array of spike cluster ids that corresponds to spikeAmps.
+
+    Returns
+    -------
+    ncMetrics: dict
+        keys:
+            maxConfidenceAt10Cont
+            minContWith90Confidence
+            timeOfLowestCont
+            nSpikesBelow2
+            confMatrix (optional, if returnMatrix ==1)
+        note: minContWith90Confidence, timeOfLowestCont will return np.nan
+        for neurons with too few spikes -- these neurons have "empty"
+        confidence and should be rejected.
+    cont: nd.array
+        Vector of contamination values tested
+    rp: nd.array
+        Vector of refractory period durations tested
+
+    '''
+
+    if params and 'returnMatrix' in params:
+        returnMatrix = params['returnMatrix']
+    else:
+        returnMatrix = False
+
+    if params and 'verbose' in params:
+        verbose = params['verbose'];
+    else:
+        verbose = False
+
+    cids = np.unique(spikeClusters)
+
+    # initialize rpMetrics as dict
+    rpMetrics = {}
+    rpMetrics['cidx'] = []
+    rpMetrics['maxConfidenceAt10Cont'] = []
+    rpMetrics['minContWith90Confidence'] = []
+    rpMetrics['timeOfLowestCont'] = []
+    rpMetrics['nSpikesBelow2'] = []
+
+    if verbose:
+        print("Computing metrics for %d clusters \n" % len(cids))
+
+    for cidx in range(len(cids)):
+        st = spikeTimes[spikeClusters == cids[cidx]]
+
+        [maxConfidenceAt10Cont, minContWith90Confidence, timeOfLowestCont,
+         nSpikesBelow2, confMatrix, cont, rp, nACG,
+         firingRate, secondsElapsed] = slidingRP(st, params)
+
+        rpMetrics['cidx'].append(cids[cidx])
+        rpMetrics['maxConfidenceAt10Cont'].append(maxConfidenceAt10Cont)
+        rpMetrics['minContWith90Confidence'].append(minContWith90Confidence)
+        rpMetrics['timeOfLowestCont'].append(timeOfLowestCont)
+        rpMetrics['nSpikesBelow2'].append(nSpikesBelow2)
+
+        if returnMatrix:
+            if 'confMatrix' not in rpMetrics:
+                rpMetrics['confMatrix'] = []
+            rpMetrics['confMatrix'].append(confMatrix)
+
+        if 'value' not in rpMetrics:
+            rpMetrics['value'] = []
+        if minContWith90Confidence <= 10:
+            rpMetrics['value'].append(1)
+        else:
+            rpMetrics['value'].append(0)
+
+        if verbose:
+            if minContWith90Confidence <= 10:
+                pfstring = 'PASS'
+            else:
+                pfstring = 'FAIL'
+            print('  %d: %s max conf = %.2f%%, min cont = %.1f%%, time = %.2f ms, n below 2 ms = %d' % (
+            cids[cidx], pfstring, maxConfidenceAt10Cont, minContWith90Confidence, timeOfLowestCont * 1000,
+            nSpikesBelow2))
+
+    return rpMetrics
 
 def using_mpl_scatter_density(fig, ax1, ax2, x, y):
     density = ax1.scatter_density(x, y, cmap=white_viridis)
